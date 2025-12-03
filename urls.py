@@ -16,6 +16,13 @@ urlpatterns = [
     path('api/reception-login/', views.login_receptionist, name='api_reception_login'),
     path('patient_login/', views.patient_login_view, name='patient_login'),
     path('recep_login/', views.recep_login_view, name='recep_login'),
+    path('api/get-appointments/', views.get_appointments, name='get_appointments'),
+    path('api/cancel-appointment/', views.cancel_appointment, name='cancel_appointment'),
+    path('api/get-all-appointments/', views.get_all_appointments, name='get_all_appointments'),
+    path('api/update-appointment-status/', views.update_appointment_status, name='update_appointment_status'),
+    path('api/notify-patient/', views.notify_patient),
+    path('api/notify-reception/', views.notify_reception),
+    path('api/receptionist-reject/', views.receptionist_reject_appointment, name='receptionist_reject'),
     #Email verification
     #path('verify-email/<str:token>/', views.verify_email, name='verify_email'),
 ]
