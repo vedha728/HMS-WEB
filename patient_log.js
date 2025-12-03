@@ -1,4 +1,3 @@
-let appointments = JSON.parse(localStorage.getItem('appointments')) || [];
 
 function showSection(sectionId) {
   // Hide all dashboards
@@ -437,6 +436,79 @@ function showNotification() {
         localStorage.setItem('patients', JSON.stringify(updatedPatients));
     }
 }
+async function loadPatientAppointments() {
+  const patient = JSON.parse(localStorage.getItem('currentPatient'));
+  if (!patient || !patient.email) {
+    document.getElementById('patientAppointments').innerHTML =
+      '<p>Please log in to view appointments.</p>';
+    return;
+  }
+
+  const csrftoken = getCookie('csrftoken');
+
+  try {
+    const response = await fetch('/api/get-appointments/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': csrftoken,
+      },
+      body: JSON.stringify({ email: patient.email })
+    });
+
+    const data = await response.json();
+
+    if (response.ok && Array.isArray(data.appointments)) {
+      const patientAppointments = data.appointments;
+
+      document.getElementById('patientAppointments').innerHTML =
+        patientAppointments.length > 0
+          ? patientAppointments.map(app => {
+              const service = app.doctor_name || app.service;
+              const date = app.appointment_date || app.date;
+              const time = app.appointment_time || app.time;
+              const status = app.status || 'Pending';
+              const token = app.token_number || null;
+
+              let statusMessage = '';
+              if (status === 'Confirmed') {
+                statusMessage = `Your appointment is Confirmed. Token: ${token || 'Not assigned'}.`;
+              } else if (status === 'Pending') {
+                statusMessage = 'Your appointment is pending confirmation.';
+              } else if (status === 'Rejected') {
+                statusMessage = 'Your appointment was rejected.';
+              }
+
+              return `
+                <div class="card mb-2">
+                  <div class="card-body">
+                    <p><strong>Service:</strong> ${service}</p>
+                    <p><strong>Reason:</strong> ${app.reason || ''}</p>
+                    <p><strong>Date:</strong> ${date}</p>
+                    <p><strong>Time:</strong> ${time}</p>
+                    <p><strong>Status:</strong> ${status}</p>
+                    <p><strong>Token Number:</strong> ${
+                      token ? token : '<span class="text-muted">Not assigned</span>'
+                    }</p>
+                    <p class="text-info">${statusMessage}</p>
+                    <button onclick="cancelAppointment('${service}', '${date}', '${time}')" class="btn btn-sm btn-danger">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              `;
+            }).join('')
+          : '<p>No appointments found.</p>';
+    } else {
+      document.getElementById('patientAppointments').innerHTML =
+        '<p>No appointments found.</p>';
+    }
+  } catch (error) {
+    document.getElementById('patientAppointments').innerHTML =
+      '<p>Error loading appointments.</p>';
+  }
+}
+
 
 async function bookAppointment(event) {
   event.preventDefault();
@@ -467,8 +539,9 @@ async function bookAppointment(event) {
     const data = await response.json();
     if (response.ok) {
       alert(data.message || 'Appointment booked successfully!');
-      // Optionally reset form fields
       event.target.reset();
+      // Fetch latest appointments for this patient
+      await loadPatientAppointments();
     } else {
       throw new Error(data.error || 'Failed to book appointment');
     }
@@ -476,65 +549,52 @@ async function bookAppointment(event) {
     alert('Error: ' + error.message);
   }
 }
- 
-function loadPatientAppointments() {
-    const patient = JSON.parse(localStorage.getItem('currentPatient'));
-    const patientAppointments = appointments.filter(app => app.patient === patient.email);
+document.addEventListener('DOMContentLoaded', loadPatientAppointments);
 
-    document.getElementById('patientAppointments').innerHTML = patientAppointments.map((app, index) => `
-        <div class="card mb-2">
-            <div class="card-body">
-                <p><strong>Service:</strong> ${app.service}</p>
-                <p><strong>Reason:</strong> ${app.reason || ''}</p>
-                <p><strong>Date:</strong> ${app.date}</p>
-                <p><strong>Time:</strong> ${app.time}</p>
-                <p><strong>Status:</strong> ${app.status}</p>
-                <p><strong>Token Number:</strong> ${app.tokenNumber ? app.tokenNumber : '<span class="text-muted">Not assigned</span>'}</p>
-                <button onclick="editAppointment(${index})" class="btn btn-sm btn-warning">Edit</button>
-                <button onclick="cancelAppointment(${index})" class="btn btn-sm btn-danger">Cancel</button>
-            </div>
-        </div>
-    `).join('');
-}
-function editAppointment(index) {
-    const patient = JSON.parse(localStorage.getItem('currentPatient'));
-    const app = appointments.filter(app => app.patient === patient.email)[index];
-
-    document.getElementById('serviceType').value = app.service;
-    document.getElementById('appointmentDate').value = app.date;
-    document.getElementById('appointmentTime').value = app.time;
-
-    // Remove the old appointment before rebooking
-    appointments = appointments.filter((_, i) => !(appointments[i].patient === patient.email && i === index));
-    localStorage.setItem('appointments', JSON.stringify(appointments));
-    // Notify receptionist about the edit
-    let receptionistNotifications = JSON.parse(localStorage.getItem('receptionistNotifications')) || [];
-    receptionistNotifications.push({
-        type: 'edit',
-        message: `Patient ${patient.profile.firstName} ${patient.profile.lastName} edited their appointment.`,
-        timestamp: new Date().toISOString()
+async function cancelAppointment(service, date, time) {
+  const patient = JSON.parse(localStorage.getItem('currentPatient'));
+  const csrftoken = getCookie('csrftoken');
+  try {
+    const response = await fetch('/api/cancel-appointment/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': csrftoken
+      },
+      body: JSON.stringify({
+        email: patient.email,
+        service: service, // doctor_name field in database
+        date: date,       // date (appointment_date in DB)
+        time: time        // time (appointment_time in DB)
+      })
     });
-    localStorage.setItem('receptionistNotifications', JSON.stringify(receptionistNotifications));
-    loadPatientAppointments();
-}
 
-function cancelAppointment(index) {
-    const patient = JSON.parse(localStorage.getItem('currentPatient'));
-    const all = appointments.filter(app => app.patient === patient.email);
-    const toRemove = all[index];
+    const data = await response.json();
 
-    appointments = appointments.filter(app => !(app.patient === patient.email && app.date === toRemove.date && app.time === toRemove.time));
-    localStorage.setItem('appointments', JSON.stringify(appointments));
-    // Notify receptionist about the cancellation
-    let receptionistNotifications = JSON.parse(localStorage.getItem('receptionistNotifications')) || [];
-    receptionistNotifications.push({
-        type: 'cancel',
-        message: `Patient ${patient.profile.firstName} ${patient.profile.lastName} canceled their appointment.`,
+    if (response.ok) {
+      alert(data.message || 'Appointment cancelled.');
+      await loadPatientAppointments(); // Refresh the list after deleting
+
+      // NEW: notify receptionist via localStorage (same browser)
+      const notification = {
+        message: `Patient ${patient.email} cancelled appointment on ${date} at ${time}.`,
         timestamp: new Date().toISOString()
-    });
-    localStorage.setItem('receptionistNotifications', JSON.stringify(receptionistNotifications));
-    loadPatientAppointments();
+      };
+      let receptionistNotifications =
+        JSON.parse(localStorage.getItem('receptionistNotifications')) || [];
+      receptionistNotifications.unshift(notification);
+      localStorage.setItem(
+        'receptionistNotifications',
+        JSON.stringify(receptionistNotifications)
+      );
+    } else {
+      alert(data.error || 'Could not cancel appointment.');
+    }
+  } catch (error) {
+    alert('Error: ' + error.message);
+  }
 }
+
 // Medical Record Upload Script
 const MAX_FILE_SIZE_MB = 1;
 const medicalRecordForm = document.getElementById('medicalRecordForm');
@@ -543,7 +603,7 @@ const uploadStatus = document.getElementById('uploadStatus');                   
 
 function logout() {
   localStorage.removeItem('currentPatient');
-  showSection('introPage');
+  window.location.href = '/';
 }
 function renderMedicineList() {
   const service = document.getElementById('serviceType').value;
@@ -705,3 +765,52 @@ const serviceToMedicines = {
 };
 
 document.getElementById('medicalRecordForm').addEventListener('submit', uploadMedicalRecord);
+
+
+const TIME_SLOTS = [
+  "09:00-10:00", "10:00-11:00", "11:00-12:00", "12:00-13:00",
+  "14:00-15:00", "15:00-16:00", "16:00-17:00", "17:00-18:00"
+];
+
+function renderSlotStatusList(date, appointments) {
+  let html = '';
+  // Always reset -- enable all options before checking
+  TIME_SLOTS.forEach(slot => {
+    const option = document.getElementById('slot-' + slot);
+    if (option) option.disabled = false;
+  });
+  TIME_SLOTS.forEach(slot => {
+    const count = appointments.filter(app => app.date === date && (app.time === slot || app.appointment_time === slot)).length;
+    let status = count >= 3 ? 'Fully Booked' : 'Opened'; // use 7 for production
+    html += `<div>${slot}: <span class="${status === 'Fully Booked' ? 'text-danger' : 'text-success'}">${status}</span></div>`;
+    const option = document.getElementById('slot-' + slot);
+    if (option && status === 'Fully Booked') option.disabled = true;
+  });
+  document.getElementById('slotStatusList').innerHTML = html;
+}
+
+async function updateSlotStatusesForSelectedDate() {
+  const date = document.getElementById('appointmentDate').value;
+  if (!date) return;
+  try {
+    const response = await fetch('/api/get-all-appointments/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date })
+    });
+    const data = await response.json();
+    if (response.ok && Array.isArray(data.appointments)) {
+      renderSlotStatusList(date, data.appointments);
+    } else {
+      renderSlotStatusList(date, []);
+    }
+  } catch (err) {
+    renderSlotStatusList(date, []);
+  }
+}
+
+document.getElementById('appointmentDate').addEventListener('change', updateSlotStatusesForSelectedDate);
+document.addEventListener('DOMContentLoaded', function(){
+  const dateField = document.getElementById('appointmentDate');
+  if (dateField && dateField.value) updateSlotStatusesForSelectedDate();
+});
