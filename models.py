@@ -25,12 +25,10 @@ class Appointment(models.Model):
     doctor_name = models.CharField(max_length=100)
     reason = models.TextField(blank=True)
     status = models.CharField(max_length=30, default='Pending')
-
+    token_number = models.CharField(max_length=10, blank=True, null=True)  # Add this line
     def __str__(self):
         return f"Appointment for {self.patient.email} on {self.appointment_date} with Dr. {self.doctor_name}"
     
-from django.db import models
-
 class MedicalRecord(models.Model):
     patient = models.ForeignKey('Patient', on_delete=models.CASCADE)
     file = models.FileField(upload_to='records/')
