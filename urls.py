@@ -1,5 +1,7 @@
 from django.urls import path
 from . import views
+from django.conf import settings
+from django.conf.urls.static import static
 
 urlpatterns = [
     # Template rendering views (for browser navigation)
@@ -26,8 +28,5 @@ urlpatterns = [
     #Email verification
     #path('verify-email/<str:token>/', views.verify_email, name='verify_email'),
 ]
-
-from django.conf import settings
-from django.conf.urls.static import static
 
 urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
